@@ -1,3 +1,4 @@
-title,year,rating,poster
-Achalugo,2025,10.0,movies.csv
-Adaugo,2024,9.9,movies.json
+title,rating,year,poster
+Titanic,7.9,1997,https://m.media-amazon.com/images/M/MV5BYzYyN2FiZmUtYWYzMy00MzViLWJkZTMtOGY1ZjgzNWMwN2YxXkEyXkFqcGc@._V1_SX300.jpg
+Liam,6.9,2000,https://m.media-amazon.com/images/M/MV5BYzhhMmZlMGQtMjJlMy00OTJhLWJiOTQtZGZjMjA4ZWE0ZmQ5XkEyXkFqcGc@._V1_SX300.jpg
+Lion,8.0,2016,https://m.media-amazon.com/images/M/MV5BMjA3NjkzNjg2MF5BMl5BanBnXkFtZTgwMDkyMzgzMDI@._V1_SX300.jpg

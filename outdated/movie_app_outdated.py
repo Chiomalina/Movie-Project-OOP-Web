@@ -87,42 +87,12 @@ class MovieApp:
         Stores: Title, Year, Rating (IMDb), Poster URL.
         """
 
-        # Movie title: e.g., "Titanic"
-        title_input = prompt_title("Enter movie title: ")
-
-        try:
-            raw = fetch_by_title(title_input)
-            core = extract_core_fields(raw)
-
-            # Parse rating as float when possible
-            rating_val = safe_float(core["Rating"]) \
-                if core["Rating"] is not None else None
-
-            self._storage.add_movie(
-                title=core["Title"],
-                year=core["Year"],
-                rating=rating_val,
-                poster=core["Poster"],
-            )
-
-            print(
-                f'{Fore.GREEN}Added: {core["Title"]} ({core["Year"]})'
-                f' | Rating: {core["Rating"] or "N/A"}'
-                f' | Poster: {core["Poster"] or "N/A"}{Style.RESET_ALL}'
-            )
-
-        except OmdbNotFound:
-            print(f'{Fore.YELLOW}Movie not found on OMDb. Try a different title or exact name.{Style.RESET_ALL}')
-        except OmdbRateLimit:
-            print(f'{Fore.YELLOW}OMDb free-tier rate limit reached. Please wait and try again.{Style.RESET_ALL}')
-        except OmdbAuthError as e:
-            print(f'{Fore.RED}{e} Set OMDB_API_KEY and retry.{Style.RESET_ALL}')
-        except OmdbNetworkError as e:
-            print(f'{Fore.RED}Network problem: {e}. Check your internet connection and retry.{Style.RESET_ALL}')
-        except OmdbError as e:
-            print(f'{Fore.RED}OMDb error: {e}{Style.RESET_ALL}')
-        except Exception as e:
-            print(f'{Fore.RED}Unexpected error: {e}{Style.RESET_ALL}')
+        title = prompt_title("Enter new movie name: ")
+        rating = prompt_rating()
+        year = prompt_year_required()
+        # poster optional-keep None for now
+        self._storage.add_movie(title, year, rating, poster=None)
+        print(f"{title} ({year}) added with rating {rating}")
 
 
 

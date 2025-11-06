@@ -1,76 +1,159 @@
 # storage_csv.py
-"""
-CSV file-based storage implementation of the IStorage interface.
-"""
+from __future__ import annotations
+
 import csv
 import os
+from typing import Dict, Any, List, Optional
+
 from istorage import IStorage
 
 
 class StorageCsv(IStorage):
-    """Stores movie data in a CSV file with columns: title,year,rating,poster."""
+    """
+    CSV-based storage for movies.
 
-    def __init__(self, file_path):
-        """Initialize StorageCsv with the path to the CSV file."""
-        self.file_path = file_path
+    CSV schema (always with header):
+        title,rating,year,poster
 
-    def _load(self):
-        """Load movies from CSV into a dict. Returns {} if file doesn't exist."""
-        movies = {}
-        if not os.path.exists(self.file_path):
-            return movies
-        with open(self.file_path, mode='r', encoding='utf-8', newline='') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                title = row['title']
-                try:
-                    year = int(row['year'])
-                except ValueError:
-                    year = None
-                try:
-                    rating = float(row['rating'])
-                except ValueError:
-                    rating = None
-                poster = row.get('poster', '')
-                movies[title] = {'year': year, 'rating': rating, 'poster': poster}
-        return movies
+    - title:  str (unique, case-insensitive)
+    - rating: float | None  (stored as string; empty cell means None)
+    - year:   str           (can be "1997", "2021–2025", "1997/II", etc.)
+    - poster: str | None    (empty cell means None)
 
-    def _save(self, movies):
-        """Save the movies dict to CSV, overwriting existing file."""
-        with open(self.file_path, mode='w', encoding='utf-8', newline='') as csvfile:
-            fieldnames = ['title', 'year', 'rating', 'poster']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    All public methods satisfy IStorage.
+    """
+
+    FIELDNAMES = ["title", "rating", "year", "poster"]
+
+    def __init__(self, filepath: str) -> None:
+        self.filepath = filepath
+        self._ensure_file()
+
+    # ------------- IStorage API -------------
+
+    def list_movies(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns a dictionary-of-dictionaries keyed by title.
+        Example:
+            {
+              "Titanic": {"rating": 9.2, "year": 1997, "poster": "..."},
+              ...
+            }
+        """
+        result: Dict[str, Dict[str, Any]] = {}
+        for row in self._read_all():
+            title = (row.get("title") or "").strip()
+            if not title:
+                continue
+            result[title] = {
+                "rating": self._to_float(row.get("rating")),  # float | None
+                "year": (row.get("year") or "").strip() or None,  # str | None (usually str)
+                "poster": self._none_if_blank(row.get("poster")),  # str | None
+            }
+            return result
+
+    def add_movie(self, title: str, year: str, rating: float | None, poster: str | None) -> None:
+        """
+        Add a new movie; raise ValueError if movie title already exists (case-insensitive).
+        """
+        rows = self._read_all()
+        if self._find_index_by_title(rows, title) is not None:
+            raise ValueError(f'Movie "{title}" already exists.')
+
+        rows.append({
+            "title": title,
+            "rating": f"{float(rating)}",
+            "year": f"{int(year)}",
+            "poster": poster or "",
+        })
+        self._write_all(rows)
+
+    def delete_movie(self, title: str) -> None:
+        """
+        Delete a movie by title; raise KeyError if not found.
+        """
+        rows = self._read_all()
+        idx = self._find_index_by_title(rows, title)
+        if idx is None:
+            raise KeyError(f'Movie "{title}" not found.')
+        del rows[idx]
+        self._write_all(rows)
+
+    def update_movie(self, title: str, rating: float | None) -> None:
+        """
+        Update rating of a movie by title; raise KeyError if not found.
+        """
+        rows = self._read_all()
+        idx = self._find_index_by_title(rows, title)
+        if idx is None:
+            raise KeyError(f'Movie "{title}" not found.')
+        rows[idx]["rating"] = f"{float(rating)}"
+        self._write_all(rows)
+
+    # ------------- Internals -------------
+
+    def _ensure_file(self) -> None:
+        """
+        Make sure the CSV exists and has the correct header.
+        """
+        needs_header = False
+
+        if not os.path.exists(self.filepath):
+            needs_header = True
+        else:
+            try:
+                with open(self.filepath, "r", encoding="utf-8", newline="") as f:
+                    sample = f.read(1024)
+                    f.seek(0)
+                    if not sample.strip():
+                        needs_header = True
+                    else:
+                        reader = csv.DictReader(f)
+                        if reader.fieldnames is None or any(
+                            fn not in (reader.fieldnames or []) for fn in self.FIELDNAMES
+                        ):
+                            needs_header = True
+            except Exception:
+                needs_header = True
+
+        if needs_header:
+            with open(self.filepath, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=self.FIELDNAMES)
+                writer.writeheader()
+
+    def _read_all(self) -> List[Dict[str, str]]:
+        with open(self.filepath, "r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            # If header wrong/missing, fix and reopen.
+            if reader.fieldnames is None or any(fn not in (reader.fieldnames or []) for fn in self.FIELDNAMES):
+                self._ensure_file()
+                f.seek(0)
+                reader = csv.DictReader(f)
+            return [dict(row) for row in reader]
+
+    def _write_all(self, rows: List[Dict[str, str]]) -> None:
+        with open(self.filepath, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=self.FIELDNAMES)
             writer.writeheader()
-            for title, info in movies.items():
-                writer.writerow({
-                    'title': title,
-                    'year': info.get('year', ''),
-                    'rating': info.get('rating', ''),
-                    'poster': info.get('poster', '')
-                })
+            writer.writerows(rows)
 
-    def list_movies(self):
-        """Return all movies as a dict: {title: {'year':..., 'rating':..., 'poster':...}}"""
-        return self._load()
+    @staticmethod
+    def _find_index_by_title(rows: List[Dict[str, str]], title: str) -> Optional[int]:
+        target = title.casefold()
+        for i, row in enumerate(rows):
+            if (row.get("title") or "").casefold() == target:
+                return i
+        return None
 
-    def add_movie(self, title, year, rating, poster):
-        """Add a new movie record to the CSV."""
-        movies = self._load()
-        movies[title] = {'year': year, 'rating': rating, 'poster': poster}
-        self._save(movies)
+    @staticmethod
+    def _to_int(value: Optional[str]) -> Optional[int]:
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
 
-    def delete_movie(self, title):
-        """Delete a movie by title; raises KeyError if not found."""
-        movies = self._load()
-        if title not in movies:
-            raise KeyError(f"Movie '{title}' does not exist.")
-        del movies[title]
-        self._save(movies)
+    @staticmethod
+    def _none_if_blank(value: Optional[str]) -> Optional[str]:
+        v = (value or "").strip()
+        return v if v else None
 
-    def update_movie(self, title, rating):
-        """Update the rating of an existing movie; raises KeyError if not found."""
-        movies = self._load()
-        if title not in movies:
-            raise KeyError(f"Movie '{title}' does not exist.")
-        movies[title]['rating'] = rating
-        self._save(movies)

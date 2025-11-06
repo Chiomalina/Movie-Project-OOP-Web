@@ -1,50 +1,76 @@
+"""JSON implementation of IStorage"""
+
 import json
-import os
+from pathlib import Path
+from typing import Dict, Any
 from istorage import IStorage
 
 class StorageJson(IStorage):
-	"""JSON file-based storage implementation of IStorage interface."""
+    """
+    JSON-based storage implementation.
 
-	def __init__(self, file_path):
-		"""Initialize storage with the path to the JSON file."""
+    File structure:
+    {
+      "Movie Title": {"year": "1997", "rating": 8.5, "poster": null}
+    }
+    """
 
-		self.file_path = file_path
-		...
+    def __init__(self, file_path: str | Path) -> None:
+        self._path = Path(file_path)
+        if not self._path.exists():
+            self._write({})
+        else:
+            try:
+                data = self._read()
+                if not isinstance(data, dict):
+                    # Reset if root isn't a dict
+                    self._write({})
+            except json.JSONDecodeError:
+                self._write({})
 
-	def _load(self):
-		"""Load movies data from JSON file or return empty dict if not found."""
-		if not os.path.exists(self.file_path):
-			return {}
-		with open(self.file_path, 'r', encoding='utf-8') as f:
-			return json.load(f)
+    # --------- helpers ---------
+    def _read(self) -> Dict[str, Dict[str, Any]]:
+        with self._path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            # Use ValueError here: JSONDecodeError is meant for parsing failures
+            raise ValueError("Root of storage JSON must be a dict")
+        # Migration guard: ensure each record has the poster key
+        for rec in data.values():
+            if "poster" not in rec:
+                rec["poster"] = None
+        return data
 
-	def _save(self, movies):
-		"""Save movies data to JSON file."""
-		with open(self.file_path, 'w', encoding='utf-8') as f:
-			json.dump(movies, f, indent=4, ensure_ascii=False)
+    def _write(self, data: Dict[str, Dict[str, Any]]) -> None:
+        with self._path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
-	def list_movies(self):
-		"""Return all movies as a dictionary."""
-		return self._load()
+    # --------- IStorage API ---------
+    def list_movies(self) -> Dict[str, Dict[str, Any]]:
+        return self._read()
 
-	def add_movie(self, title, year, rating, poster):
-		"""Add a new movie entry to storage."""
-		movies = self._load()
-		movies[title] = {"year": year, "rating": rating, "poster": poster}
-		self._save(movies)
+    def add_movie(self, title: str, year: str, rating: float | None, poster: str | None) -> None:
+        """
+        Persist a movie record exactly as provided by the caller.
+        """
+        data = self._read()
+        data[title] = {"year": year, "rating": rating, "poster": poster}
+        self._write(data)
 
-	def delete_movie(self, title):
-		"""Delete a movie by its title."""
-		movies = self._load()
-		if title not in movies:
-			raise KeyError(f"Movie '{title}' does not exist.")
-		del movies[title]
-		self._save(movies)
+    def delete_movie(self, title: str) -> None:
+        """
+        Remove a movie by exact title key, if present.
+        """
+        data = self._read()
+        if title in data:
+            del data[title]
+            self._write(data)
 
-	def update_movie(self, title, rating):
-		"""Update the rating of an existing movie."""
-		movies = self._load()
-		if title not in movies:
-			raise KeyError(f"Movie '{title}' does not exist.")
-		movies[title]["rating"] = rating
-		self._save(movies)
+    def update_movie(self, title: str, rating: float | None) -> None:
+        """
+        Update only the rating of an existing movie, if present.
+        """
+        data = self._read()
+        if title in data:
+            data[title]["rating"] = rating
+            self._write(data)

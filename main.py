@@ -1,21 +1,23 @@
-# main.py
-"""
-Entry point for the Movie Project application.
-"""
+""" entrypoint that wires StorageJson -> MovieApp"""
 
-from storage_csv import StorageCsv
 from storage_json import StorageJson
+from storage_csv import StorageCsv
 from movie_app import MovieApp
 
 
-def main():
-    """Create storage, initialize MovieApp, and start the application."""
-    # You can swap out StorageJson for another IStorage implementation in the future
-    #storage = StorageJson('movies.json')
-    storage = StorageCsv('movies.csv')
-    app = MovieApp(storage)
+def main() -> None:
+    """
+    Try per-user storage files to validate “multiple files” architecture:
+    storage = StorageJson("john.json")
+    storage = StorageJson("sara.json")
+    """
+
+    storage_csv = StorageCsv("movies.csv")
+    storage_json = StorageJson("movies.json")
+
+    app = MovieApp(storage_csv)
     app.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
