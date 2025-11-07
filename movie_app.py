@@ -34,6 +34,8 @@ from omdb_client import (
     OmdbError
     )
 
+from website import generate_website_from_storage
+
 class MovieApp:
     """ CLI application that manages movies using a pluggable storage backend """
 
@@ -48,9 +50,10 @@ class MovieApp:
     6.  Random movie
     7.  Create rating histogram
     8.  Search by name
-    9.  Sort by rating
-    10. Sort by year
-    11. Filter by rating/year
+    9.  Generate website
+    10. Sort by rating
+    11. Sort by year
+    12. Filter by rating/year
     """
 
 
@@ -319,6 +322,17 @@ class MovieApp:
             rec = movies[resolved]
             print(f"{resolved} ({rec['year']}): {rec['rating']}")
 
+    def _command_generate_website(self) -> None:
+        try:
+            generate_website_from_storage(
+                storage=self._storage,
+                template_path="static/index_template.html",
+                output_path="index.html",
+                title="Chioma's Movie App",
+            )
+            print("Website was generated successfully.")
+        except Exception as e:
+            print(f"{Fore.RED}Failed to generate website: {e}{Style.RESET_ALL}")
 
     def _command_sort_movies_by_rating(self) -> None:
         """
@@ -426,9 +440,10 @@ class MovieApp:
             6: self._command_random_movie,
             7: self._command_create_rating_histogram,
             8: self._command_search_movies,
-            9: self._command_sort_movies_by_rating,
-            10: self._command_sort_movies_by_year,
-            11: self._command_filter_movies,
+            9: self._command_generate_website,
+            10: self._command_sort_movies_by_rating,
+            11: self._command_sort_movies_by_year,
+            12: self._command_filter_movies,
         }
 
         while True:

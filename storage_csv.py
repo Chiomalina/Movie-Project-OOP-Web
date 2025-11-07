@@ -36,7 +36,7 @@ class StorageCsv(IStorage):
         Returns a dictionary-of-dictionaries keyed by title.
         Example:
             {
-              "Titanic": {"rating": 9.2, "year": 1997, "poster": "..."},
+              "Titanic": {"rating": 9.2, "year": "1997", "poster": "..."},
               ...
             }
         """
@@ -47,10 +47,10 @@ class StorageCsv(IStorage):
                 continue
             result[title] = {
                 "rating": self._to_float(row.get("rating")),  # float | None
-                "year": (row.get("year") or "").strip() or None,  # str | None (usually str)
+                "year": (row.get("year") or "").strip() or None,  # str | None
                 "poster": self._none_if_blank(row.get("poster")),  # str | None
             }
-            return result
+        return result
 
     def add_movie(self, title: str, year: str, rating: float | None, poster: str | None) -> None:
         """
@@ -62,8 +62,10 @@ class StorageCsv(IStorage):
 
         rows.append({
             "title": title,
-            "rating": f"{float(rating)}",
-            "year": f"{int(year)}",
+            # store empty string for None to keep CSV clean
+            "rating": "" if rating is None else f"{float(rating)}",
+            # keep year as-is (string) to support ranges/suffixes
+            "year": "" if year is None else str(year),
             "poster": poster or "",
         })
         self._write_all(rows)
@@ -87,7 +89,7 @@ class StorageCsv(IStorage):
         idx = self._find_index_by_title(rows, title)
         if idx is None:
             raise KeyError(f'Movie "{title}" not found.')
-        rows[idx]["rating"] = f"{float(rating)}"
+        rows[idx]["rating"] = "" if rating is None else f"{float(rating)}"
         self._write_all(rows)
 
     # ------------- Internals -------------
@@ -156,4 +158,17 @@ class StorageCsv(IStorage):
     def _none_if_blank(value: Optional[str]) -> Optional[str]:
         v = (value or "").strip()
         return v if v else None
+
+    @staticmethod
+    def _to_float(value: Optional[str]) -> Optional[float]:
+        if value is None:
+            return None
+        s = str(value).strip()
+        if not s or s.upper() == "N/A":
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
+
 
