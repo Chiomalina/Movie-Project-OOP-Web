@@ -1,42 +1,56 @@
 """
 movie_app.py
-The CLI app class (menu + commands), no main() here
-
+CLI application class (menu + commands). No main() here.
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
-from colorama import Fore, Style
 import random
+from typing import Dict, Optional, Tuple
+
 import matplotlib.pyplot as plt
+from colorama import Fore, Style
 
 from istorage import IStorage
+from movies import select_title_from_user_query
+from utils import normalize_title
 from validators import (
-    prompt_title,
-    prompt_rating,
-    prompt_year_filter,
     prompt_choice,
+    prompt_rating,
+    prompt_title,
+    prompt_year_filter,
     safe_float,
 )
-from utils import normalize_title
-from movies import select_title_from_user_query
 
+# If this file lives in src/, prefer absolute intra-package imports:
+# from omdb_client import (...). Using relative imports is also fine if you make src a package.
 from src.omdb_client import (
-    fetch_by_title,
-    extract_core_fields,
-    OmdbNotFound,
     OmdbAuthError,
-    OmdbRateLimit,
+    OmdbError,
     OmdbNetworkError,
-    OmdbError
-    )
+    OmdbNotFound,
+    OmdbRateLimit,
+    extract_core_fields,
+    fetch_by_title,
+)
 
-from website import generate_website_from_storage
+
+def _year_to_int(value) -> Optional[int]:
+    """
+    Convert various OMDb/CSV year strings to an int year when possible.
+
+    Examples:
+        "1997" -> 1997
+        "2015–2019" -> 2015
+        "1997/II" -> 1997
+        None, "", invalid -> None
+    """
+    s = str(value or "").strip()
+    return int(s[:4]) if len(s) >= 4 and s[:4].isdigit() else None
+
 
 class MovieApp:
-    """ CLI application that manages movies using a pluggable storage backend """
+    """CLI application that manages movies using a pluggable storage backend."""
 
     MENU_TEXT = f"""
     {Fore.CYAN}=== Movie App ==={Style.RESET_ALL}
@@ -55,55 +69,42 @@ class MovieApp:
     12. Filter by rating/year
     """
 
-
     def __init__(self, storage: IStorage) -> None:
         """
         Args:
-            storage: An implementation of IStorage (e.g., StorageJson).
+            storage: An implementation of IStorage (e.g., StorageJson or StorageCsv).
         """
         self._storage = storage
 
-
     # ----------------- Commands (private) -----------------
     def _command_list_movies(self) -> None:
-        """
-        Print all movies currently stored.
-
-        Side effects:
-            - Reads the full database from `movie_storage`.
-            - Prints one line per movie in the format: "<title> (<year>): <rating>".
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        if not movies:
+        """Print all movies currently stored."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
             print("No movies in database.")
             return
-        for title, rec in movies.items():
-            print(f"{title} ({rec.get('year', '?')}): {rec.get('rating', '?')}")
+
+        for title, record in movies_dict.items():
+            print(f"{title} ({record.get('year', '?')}): {record.get('rating', '?')}")
 
     def _command_add_movie(self) -> None:
         """
-        Add a movie by fetching real data from OMDb using only the title from the user.
+        Add a movie by fetching real data from OMDb using only the title.
         Stores: Title, Year, Rating (IMDb), Poster URL.
         """
-
-        # Movie title: e.g., "Titanic"
         title_input = prompt_title("Enter movie title: ")
 
         try:
-            raw = fetch_by_title(title_input)
-            core = extract_core_fields(raw)
+            payload = fetch_by_title(title_input)
+            core = extract_core_fields(payload)
 
             # Parse rating as float when possible
-            rating_val = safe_float(core["Rating"]) \
-                if core["Rating"] is not None else None
+            rating_value = safe_float(core["Rating"]) if core["Rating"] is not None else None
 
             self._storage.add_movie(
                 title=core["Title"],
                 year=core["Year"],
-                rating=rating_val,
+                rating=rating_value,
                 poster=core["Poster"],
             )
 
@@ -117,51 +118,28 @@ class MovieApp:
             print(f'{Fore.YELLOW}Movie not found on OMDb. Try a different title or exact name.{Style.RESET_ALL}')
         except OmdbRateLimit:
             print(f'{Fore.YELLOW}OMDb free-tier rate limit reached. Please wait and try again.{Style.RESET_ALL}')
-        except OmdbAuthError as e:
-            print(f'{Fore.RED}{e} Set OMDB_API_KEY and retry.{Style.RESET_ALL}')
-        except OmdbNetworkError as e:
-            print(f'{Fore.RED}Network problem: {e}. Check your internet connection and retry.{Style.RESET_ALL}')
-        except OmdbError as e:
-            print(f'{Fore.RED}OMDb error: {e}{Style.RESET_ALL}')
-        except Exception as e:
-            print(f'{Fore.RED}Unexpected error: {e}{Style.RESET_ALL}')
-
-
+        except OmdbAuthError as exc:
+            print(f'{Fore.RED}{exc} Set OMDB_API_KEY and retry.{Style.RESET_ALL}')
+        except OmdbNetworkError as exc:
+            print(f'{Fore.RED}Network problem: {exc}. Check your internet connection and retry.{Style.RESET_ALL}')
+        except OmdbError as exc:
+            print(f'{Fore.RED}OMDb error: {exc}{Style.RESET_ALL}')
+        except Exception as exc:  # safeguard
+            print(f'{Fore.RED}Unexpected error: {exc}{Style.RESET_ALL}')
 
     def _command_delete_movie(self) -> None:
-        """
-        Delete a movie using a safe, user-confirmed flow.
-
-        Flow:
-            1) Load all movies; abort if empty.
-            2) Ask for a movie name; resolve against database titles using:
-               - exact match (case/space-insensitive via `normalize_title`),
-               - substring matches,
-               - fuzzy matches (RapidFuzz).
-            3) Show the resolved record's details.
-            4) Require the user to re-type the exact title to confirm deletion.
-            5) Delete from storage (handles missing key gracefully).
-
-        Side effects:
-            - Reads input from stdin; writes messages to stdout.
-            - May remove an entry from persistent storage.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        if not movies:
+        """Delete a movie using a safe, user-confirmed flow."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
             print("No movies in database.")
             return
 
         user_input = prompt_title("Enter movie name to delete: ")
-        resolved_title = select_title_from_user_query(movies, user_input)
+        resolved_title = select_title_from_user_query(movies_dict, user_input)
         if not resolved_title:
             return
 
-        record = movies[resolved_title]
-
-        # Show details for confirmation
+        record = movies_dict[resolved_title]
         print(
             f"\nAbout to delete:\n"
             f"  • Title : {resolved_title}\n"
@@ -170,159 +148,107 @@ class MovieApp:
         )
 
         typed = input("Type the exact title to confirm deletion (or press Enter to cancel): ").strip()
-
         if normalize_title(typed) != normalize_title(resolved_title):
             print("Deletion cancelled.")
             return
 
-        # Perform deletion
         self._storage.delete_movie(resolved_title)
         print(f"'{resolved_title}' successfully deleted.")
 
-
     def _command_update_movie(self) -> None:
-        """
-        Update the rating of an existing movie.
-
-        Flow:
-            1) Load movies; abort if empty.
-            2) Ask for a movie name and resolve it (exact/substring/fuzzy).
-            3) Prompt for a new rating (float in [0.0, 10.0]).
-            4) Save the updated rating.
-
-        Side effects:
-            - Reads user input.
-            - Writes the updated record to storage.
-            - Prints a confirmation line.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        if not movies:
+        """Update the rating of an existing movie."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
             print("No movies in database.")
             return
+
         user_input = prompt_title("Enter movie name to update: ")
-        resolved_title = select_title_from_user_query(movies, user_input)
+        resolved_title = select_title_from_user_query(movies_dict, user_input)
         if not resolved_title:
             return
+
         new_rating = prompt_rating()
         self._storage.update_movie(resolved_title, new_rating)
         print(f"'{resolved_title}' updated with rating {new_rating}")
 
-
     def _command_stats(self) -> None:
         """
-        Compute and display simple statistics for stored movies.
-
-        Statistics:
-            - Average rating (mean, 1 decimal place).
-            - Median rating (simple middle element; for even counts this uses the
-              upper-middle after sorting).
-            - Best movie title by rating (first max).
-            - Worst movie title by rating (first min).
-
-        Side effects:
-            - Reads from storage and prints results.
-
-        Returns:
-            None
+        Compute and display simple statistics for stored movies:
+        average, median, best title, worst title (by rating).
         """
-        movies = self._storage.list_movies()
-        ratings = [rec.get["rating"] for rec in movies.values() if isinstance(rec.get("rating"), (int, float))]
-        if not ratings:
-            print("No movies in database.")
+        movies_dict = self._storage.list_movies()
+        numeric_ratings = [
+            record.get("rating")
+            for record in movies_dict.values()
+            if isinstance(record.get("rating"), (int, float))
+        ]
+        if not numeric_ratings:
+            print("No rated movies in database.")
             return
-        avg = sum(ratings) / len(ratings)
-        sorted_ratings = sorted(ratings)
-        median = sorted_ratings[len(sorted_ratings) // 2]
-        best_title = max(movies, key=lambda t: movies[t].get("rating", float("-inf")))
-        worst_title = min(movies, key=lambda t: movies[t].get["rating", float("-inf")])
-        print(f"Average: {avg:.1f}, Median: {median}, Best: {best_title}, Worst: {worst_title}")
 
+        average = sum(numeric_ratings) / len(numeric_ratings)
+        sorted_ratings = sorted(numeric_ratings)
+        median = sorted_ratings[len(sorted_ratings) // 2]
+
+        def rating_or_default(title: str, default: float) -> float:
+            value = movies_dict[title].get("rating")
+            return value if isinstance(value, (int, float)) else default
+
+        best_title = max(movies_dict, key=lambda t: rating_or_default(t, float("-inf")))
+        worst_title = min(movies_dict, key=lambda t: rating_or_default(t, float("inf")))
+
+        print(f"Average: {average:.1f}, Median: {median}, Best: {best_title}, Worst: {worst_title}")
 
     def _command_random_movie(self) -> None:
-        """
-        Pick and display a random movie from the database.
-
-        Side effects:
-            - Reads movies from storage.
-            - Prints the randomly chosen title with year and rating.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        if not movies:
+        """Pick and display a random movie from the database."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
             print("No movies in database.")
             return
-        chosen = random.choice(list(movies))
-        rec = movies[chosen]
-        year = rec.get("year", "Unknown")
-        rating = rec.get("rating", "N/A")
-        print(f"Your random Movie for tonight is: {chosen} ({year}): {rating}")
-
+        chosen_title = random.choice(list(movies_dict.keys()))
+        record = movies_dict[chosen_title]
+        year_text = record.get("year", "Unknown")
+        rating_text = record.get("rating", "N/A")
+        print(f"Your random movie for tonight is: {chosen_title} ({year_text}): {rating_text}")
 
     def _command_create_rating_histogram(self) -> None:
-        """
-        Create and save a histogram of all movie ratings.
-
-        Flow:
-            1) Load ratings from storage; abort if none.
-            2) Ask the user for an output filename (e.g., 'ratings.png').
-            3) Plot a histogram with 20 bins and save the figure to disk.
-
-        Side effects:
-            - Prompts for a filename.
-            - Writes an image file via matplotlib.
-            - Prints where the histogram was saved.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        ratings = [rec["rating"] for rec in movies.values()]
-        if not ratings:
+        """Create and save a histogram of all numeric movie ratings."""
+        movies_dict = self._storage.list_movies()
+        numeric_ratings = [
+            record.get("rating")
+            for record in movies_dict.values()
+            if isinstance(record.get("rating"), (int, float))
+        ]
+        if not numeric_ratings:
             print("No movies in database.")
             return
+
         filename = input("Enter filename for histogram (ratings.png): ").strip() or "ratings.png"
-        plt.hist(ratings, bins=20, edgecolor="black")
+        plt.hist(numeric_ratings, bins=20, edgecolor="black")
         plt.title("Movie Ratings Histogram")
         plt.xlabel("Rating")
         plt.ylabel("Frequency")
         plt.savefig(filename)
         print(f"Histogram saved to {filename}")
 
-
     # ----------------- Search & Selection -----------------
     def _command_search_movies(self) -> None:
-        """
-        Search for a movie by (part of) its name and print the best match.
-
-        Flow:
-            1) Load movies; abort if empty.
-            2) Prompt the user for a search string.
-            3) Resolve a title via `select_title_from_user_query`.
-            4) Print the resolved movie's year and rating.
-
-        Side effects:
-            - Reads user input; prints results.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        if not movies:
+        """Search for a movie by (part of) its name and print the best match."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
             print("No movies in database.")
             return
         term = prompt_title("Enter part of movie name to search: ")
-        resolved = select_title_from_user_query(movies, term)
+        resolved = select_title_from_user_query(movies_dict, term)
         if resolved:
-            rec = movies[resolved]
-            print(f"{resolved} ({rec['year']}): {rec['rating']}")
+            record = movies_dict[resolved]
+            print(f"{resolved} ({record.get('year', '?')}): {record.get('rating', '?')}")
 
     def _command_generate_website(self) -> None:
+        """Generate static website into static/index.html."""
         try:
+            from website import generate_website_from_storage
+
             generate_website_from_storage(
                 storage=self._storage,
                 template_path="static/index_template.html",
@@ -330,106 +256,76 @@ class MovieApp:
                 title="Chioma's Movie App",
             )
             print("Website was generated successfully.")
-        except Exception as e:
-            print(f"{Fore.RED}Failed to generate website: {e}{Style.RESET_ALL}")
+        except Exception as exc:
+            print(f"{Fore.RED}Failed to generate website: {exc}{Style.RESET_ALL}")
 
     def _command_sort_movies_by_rating(self) -> None:
-        """
-        Display movies sorted by rating (highest first).
-
-        Side effects:
-            - Reads from storage.
-            - Prints one line per movie in sorted order.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        sorted_items = sorted(movies.items(), key=lambda kv: kv[1]["rating"], reverse=True)
-        for title, rec in sorted_items:
-            print(f"{title} ({rec['year']}): {rec['rating']}")
-
-
-    def _command_sort_movies_by_year(self) -> None:
-        """
-        Display movies sorted by release year.
-
-        Flow:
-            - Prompt whether to show latest movies first.
-            - Sort ascending (oldest→newest) unless the user chooses 'y' for latest first.
-
-        Side effects:
-            - Reads user input.
-            - Prints sorted movie lines.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-        if not movies:
+        """Display movies sorted by rating (highest first)."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
             print("No movies in database.")
             return
-        reverse = input("Show latest movies first? (y/n): ").strip().lower() == "y"
-        sorted_items = sorted(movies.items(), key=lambda kv: kv[1]["year"], reverse=reverse)
-        for title, rec in sorted_items:
-            print(f"{title} ({rec['year']}): {rec['rating']}")
 
+        def key_fn(item: Tuple[str, Dict]) -> float:
+            rating = item[1].get("rating")
+            return rating if isinstance(rating, (int, float)) else float("-inf")
+
+        for title, record in sorted(movies_dict.items(), key=key_fn, reverse=True):
+            print(f"{title} ({record.get('year', '?')}): {record.get('rating', '?')}")
+
+    def _command_sort_movies_by_year(self) -> None:
+        """Display movies sorted by release year."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
+            print("No movies in database.")
+            return
+
+        latest_first = input("Show latest movies first? (y/n): ").strip().lower() == "y"
+
+        def key_fn(item: Tuple[str, Dict]) -> Tuple[bool, int]:
+            year_int = _year_to_int(item[1].get("year"))
+            # Sort None years to the end: (True/False, year)
+            return (year_int is None, year_int or 0)
+
+        for title, record in sorted(movies_dict.items(), key=key_fn, reverse=latest_first):
+            print(f"{title} ({record.get('year', '?')}): {record.get('rating', '?')}")
 
     def _command_filter_movies(self) -> None:
-        """
-        Filter movies by minimum rating and/or a year range, then display matches.
+        """Filter movies by minimum rating and/or a year range, then display matches."""
+        movies_dict = self._storage.list_movies()
+        if not movies_dict:
+            print("No movies in database.")
+            return
 
-        Prompts:
-            - Minimum rating (blank = no minimum). Accepts '.' or ',' decimals.
-            - Start year (blank = no lower bound). Must be ≤ current year.
-            - End year (blank = no upper bound). Must be ≤ current year.
-
-        Filter logic:
-            - Exclude any movie with rating < min_rating (if provided).
-            - Exclude movies with year < start_year (if provided).
-            - Exclude movies with year > end_year (if provided).
-
-        Side effects:
-            - Reads user input and prints the filtered list, or a message if none.
-
-        Returns:
-            None
-        """
-        movies = self._storage.list_movies()
-
-        # Minimum rating
         raw = input("Enter minimum rating (blank=none): ").strip()
         min_rating = safe_float(raw) if raw else None
-
-        # Start year (cannot be future)
         start_year = prompt_year_filter("Enter start year")
-
-        # End year (cannot be future)
         end_year = prompt_year_filter("Enter end year")
 
-        filtered = []
-        for title, rec in movies.items():
-            if min_rating is not None and rec["rating"] < min_rating:
+        filtered: list[tuple[str, str | int | None, float | None]] = []
+        for title, record in movies_dict.items():
+            year_int = _year_to_int(record.get("year"))
+            rating_val = record.get("rating")
+
+            if min_rating is not None and (not isinstance(rating_val, (int, float)) or rating_val < min_rating):
                 continue
-            if start_year is not None and rec["year"] < start_year:
+            if start_year is not None and (year_int is None or year_int < start_year):
                 continue
-            if end_year is not None and rec["year"] > end_year:
+            if end_year is not None and (year_int is None or year_int > end_year):
                 continue
-            filtered.append((title, rec["year"], rec["rating"]))
+
+            filtered.append((title, record.get("year"), rating_val))
 
         if not filtered:
             print("No movies match criteria.")
             return
 
-        for title, year, rating in filtered:
-            print(f"{title} ({year}): {rating}")
-
+        for title, year_text, rating_text in filtered:
+            print(f"{title} ({year_text if year_text is not None else '?'}): {rating_text if rating_text is not None else '?'}")
 
     # -------- Main loop --------
     def run(self) -> None:
-        """
-		Menu loop: prints options, gets a command, executes it until user exits.
-		"""
+        """Menu loop: prints options, gets a command, executes until user exits."""
         actions = {
             1: self._command_list_movies,
             2: self._command_add_movie,
@@ -451,8 +347,8 @@ class MovieApp:
             if choice == 0:
                 print("Goodbye!")
                 return
-            action = actions.get(kind := choice)
+            action = actions.get(choice)
             if action:
                 action()
             else:
-                print(f"Unknown choice: {kind}")
+                print(f"Unknown choice: {choice}")
