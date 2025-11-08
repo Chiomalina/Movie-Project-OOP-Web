@@ -7,8 +7,6 @@ movies.py -- minimal module exporting only
 from typing import Dict
 from validators import (
     prompt_index,
-    safe_float,
-    prompt_year_required,
 )
 from utils import normalize_title, substring_matches, fuzzy_matches
 

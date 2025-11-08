@@ -5,7 +5,8 @@ The CLI app class (menu + commands), no main() here
 """
 
 from __future__ import annotations
-from typing import Dict, Optional
+
+from typing import Optional
 
 from colorama import Fore, Style
 import random
@@ -17,14 +18,12 @@ from validators import (
     prompt_rating,
     prompt_year_filter,
     prompt_choice,
-    prompt_index,
     safe_float,
-    prompt_year_required,
 )
-from utils import normalize_title, substring_matches, fuzzy_matches
+from utils import normalize_title
 from movies import select_title_from_user_query
 
-from omdb_client import (
+from src.omdb_client import (
     fetch_by_title,
     extract_core_fields,
     OmdbNotFound,
@@ -230,16 +229,16 @@ class MovieApp:
             None
         """
         movies = self._storage.list_movies()
-        ratings = [rec["rating"] for rec in movies.values()]
+        ratings = [rec.get["rating"] for rec in movies.values() if isinstance(rec.get("rating"), (int, float))]
         if not ratings:
             print("No movies in database.")
             return
         avg = sum(ratings) / len(ratings)
         sorted_ratings = sorted(ratings)
         median = sorted_ratings[len(sorted_ratings) // 2]
-        best = max(movies, key=lambda t: movies[t]["rating"])
-        worst = min(movies, key=lambda t: movies[t]["rating"])
-        print(f"Average: {avg:.1f}, Median: {median}, Best: {best}, Worst: {worst}")
+        best_title = max(movies, key=lambda t: movies[t].get("rating", float("-inf")))
+        worst_title = min(movies, key=lambda t: movies[t].get["rating", float("-inf")])
+        print(f"Average: {avg:.1f}, Median: {median}, Best: {best_title}, Worst: {worst_title}")
 
 
     def _command_random_movie(self) -> None:
@@ -327,7 +326,7 @@ class MovieApp:
             generate_website_from_storage(
                 storage=self._storage,
                 template_path="static/index_template.html",
-                output_path="index.html",
+                output_path="static/index.html",
                 title="Chioma's Movie App",
             )
             print("Website was generated successfully.")
@@ -448,7 +447,7 @@ class MovieApp:
 
         while True:
             print(self.MENU_TEXT)
-            choice = prompt_choice(max_choice=11)
+            choice = prompt_choice(max_choice=12)
             if choice == 0:
                 print("Goodbye!")
                 return

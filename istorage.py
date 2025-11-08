@@ -11,32 +11,27 @@ class IStorage(ABC):
 	@abstractmethod
 	def list_movies(self) -> Dict[str, Dict[str, Any]]:
 		"""
-        Return the entire movies dictionary, e.g.:
-        {
-          "Titanic": {"year": "1997", "rating": 7.9, "poster": "https://..."},
-          ...
-        }
-        """
-		pass
+		return ll movies keyed by title.
+		"""
+		raise NotImplementedError
 
 	@abstractmethod
 	def add_movie(self, title: str, year: str, rating: float | None, poster: str | None) -> None:
 		"""
         Persist a movie record. No input validation or user interaction here.
-        The caller (CLI/service) is responsible for sanitizing/typing.
         """
-		pass
+		raise NotImplementedError
 
 	@abstractmethod
 	def delete_movie(self, title: str) -> None:
 		"""
-	    Remove a movie by exact title key, if present.
+	    Remove a movie by its exact title key.
 	    """
-		pass
+		raise NotImplementedError
 
 	@abstractmethod
 	def update_movie(self, title: str, rating: float | None) -> None:
 		"""
-	    Update only the rating for an existing movie, if present.
+	    Update only the rating for an existing movie.
 	    """
-		pass
+		raise NotImplementedError

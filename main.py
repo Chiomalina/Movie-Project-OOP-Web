@@ -1,7 +1,7 @@
 """ entrypoint that wires StorageJson -> MovieApp"""
 
-from storage_json import StorageJson
-from storage_csv import StorageCsv
+from storage.storage_json import StorageJson
+from storage.storage_csv import StorageCsv
 from movie_app import MovieApp
 
 
@@ -12,8 +12,8 @@ def main() -> None:
     storage = StorageJson("sara.json")
     """
 
-    storage_csv = StorageCsv("movies.csv")
-    storage_json = StorageJson("movies.json")
+    storage_csv = StorageCsv("storage/movies.csv")
+    storage_json = StorageJson("outdated/movies.json")
 
     app = MovieApp(storage_csv)
     app.run()

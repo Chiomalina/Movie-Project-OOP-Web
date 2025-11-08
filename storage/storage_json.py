@@ -49,12 +49,12 @@ class StorageJson(IStorage):
     def list_movies(self) -> Dict[str, Dict[str, Any]]:
         return self._read()
 
-    def add_movie(self, title: str, year: str, rating: float | None, poster: str | None) -> None:
+    def add_movie(self, title: str, year: str | int, rating: float | None, poster: str | None) -> None:
         """
         Persist a movie record exactly as provided by the caller.
         """
         data = self._read()
-        data[title] = {"year": year, "rating": rating, "poster": poster}
+        data[title] = {"year": str(year) if year is None else None, "rating": rating, "poster": poster}
         self._write(data)
 
     def delete_movie(self, title: str) -> None:

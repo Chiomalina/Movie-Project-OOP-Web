@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import os
-from http.client import responses
+from typing import Dict, Optional
 
 import requests
-from typing import Dict, Optional
 from dotenv import load_dotenv
 
 # loads variables from .env if present
@@ -61,7 +60,10 @@ def fetch_by_title(title: str, *, timeout: float = 8.0) -> Dict[str, str]:
 	if response.status_code >= 500:
 		raise OmdbNetworkError(f"OMDb server error (HTTP {response.status_code}).")
 
-	data: Dict[str, str] = response.json()
+	try:
+		data: Dict[str, str] = response.json()
+	except ValueError as e:
+		raise OmdbNetworkError("Invalid JSON response from OMBD.") from e
 
 	# OMDb signals problems in JSON:
 	# {"Response":"False","Error":"Movie not found!"}

@@ -2,9 +2,9 @@
 test_storage.py -- Quick sanity check for StorageJson (dev-only)
 """
 import os
-from storage_json import StorageJson
+from storage.storage_json import StorageJson
 
-TEST_FILE = "john.json"
+TEST_FILE = "../outdated/john.json"
 
 def reset(path: str) -> None:
     if os.path.exists(path):

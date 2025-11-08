@@ -3,7 +3,8 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.7%2B-green.svg)](https://www.python.org/)
 
-> A sleek, interactive command-line application to manage your personal movie collection with persistent JSON storage, fuzzy search, filtering, and advanced statistics. 🚀
+A clean, modular command-line app to manage your personal movie collection with pluggable storage (JSON/CSV), OMDb lookup, fuzzy search, filters, stats, and static website generation. 🚀
+A clean, modular command-line app to manage your personal movie collection with pluggable storage (JSON/CSV), OMDb lookup, fuzzy search, filters, stats, and static website generation. 🚀
 
 ---
 

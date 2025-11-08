@@ -5,34 +5,23 @@ The CLI app class (menu + commands), no main() here
 """
 
 from __future__ import annotations
-from typing import Dict, Optional
 
 from colorama import Fore, Style
 import random
 import matplotlib.pyplot as plt
 
-from istorage import IStorage
+from storage import IStorage
 from validators import (
     prompt_title,
     prompt_rating,
     prompt_year_filter,
     prompt_choice,
-    prompt_index,
     safe_float,
     prompt_year_required,
 )
-from utils import normalize_title, substring_matches, fuzzy_matches
+from utils import normalize_title
 from movies import select_title_from_user_query
 
-from omdb_client import (
-    fetch_by_title,
-    extract_core_fields,
-    OmdbNotFound,
-    OmdbAuthError,
-    OmdbRateLimit,
-    OmdbNetworkError,
-    OmdbError
-    )
 
 class MovieApp:
     """ CLI application that manages movies using a pluggable storage backend """
